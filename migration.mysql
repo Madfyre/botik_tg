@@ -1,0 +1,48 @@
+DROP TABLE user_question;
+DROP TABLE users;
+DROP TABLE questions;
+
+
+CREATE TABLE users (
+	id INT PRIMARY KEY auto_increment,
+    account_id INT unique,
+    first_name VARCHAR(100) default '',
+    last_name VARCHAR(100) default '',
+    age int default 0,
+    sex VARCHAR(50) default '',
+    anketa TEXT,
+    admin_rights BOOLEAN default 0,
+    verified BOOLEAN default 0
+);
+
+CREATE TABLE questions (
+	id INT PRIMARY KEY auto_increment,
+    question VARCHAR(200) default '',
+    possible_answers VARCHAR(200)
+);
+
+CREATE TABLE user_question (
+	id INT PRIMARY KEY auto_increment,
+    user_id INT,
+    question_id INT,
+    answer VARCHAR(200) default '',
+    foreign key (user_id) references users (id),
+    foreign key (question_id) references questions (id)
+);
+ALTER TABLE `user_question` ADD UNIQUE `by_user_id_and_question_id`(`user_id`, `question_id`);
+
+-- update users SET admin_rights = 0 WHERE account_id = 1188520546;
+
+-- INSERT INTO users (account_id, first_name, last_name, age, sex, admin_rights, verified)
+-- values (1188520546, 'Вася', 'Ермаков', 22, 'Male', 1, 0);
+
+-- INSERT INTO questions (question, possible_answers)
+-- values
+-- ('Когда дрочешь что бормочешь?', 'Кааайф;Мммм собачки...;Я не дрочу;Я лох'),
+-- ('Потому что Дора...?', 'Дура;Супер Дора;Супер Дора Дура;Я лох');
+
+SELECT * FROM users;
+
+select * FROM questions;
+
+select * FROM user_question;
