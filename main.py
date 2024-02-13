@@ -59,7 +59,7 @@ VERIFY_USER_QUERY = """
                     SET verified = %s
                     """
 SELECT_USER_DATA_QUERY = """
-                    SELECT account_id
+                    SELECT *
                     FROM users
                     """
 SELECT_PEOPLE = """
@@ -75,6 +75,7 @@ ADMIN_CHOICE = (
     "Чтобы вывести все вопросы, напиши /read\n"
     "Чтобы удалить вопрос, напиши /delete\n"
     "Чтобы начать рассылку вопросов /start_mailing\n"
+    "Чтобы выйти из режима админа нажми /exit\n"
     "Чтобы выйти из режима админа нажми /exit\n"
 )
 
@@ -218,14 +219,16 @@ def callback_worker(call):
         pass
 
     markup = types.InlineKeyboardMarkup()
-    item1 = types.InlineKeyboardButton(text="Парня", callback_data="Boy")
-    item2 = types.InlineKeyboardButton(text="Девушку", callback_data="Girl")
+    item1 = types.InlineKeyboardButton(text="С парнем", callback_data="Boy")
+    item2 = types.InlineKeyboardButton(text="С девушкой", callback_data="Girl")
+    item3 = types.InlineKeyboardButton(text="Неважно", callback_data="Pohui")
     markup.add(item1)
     markup.add(item2)
-    bot.send_message(call.message.chat.id, "Кого ты ищешь?", reply_markup=markup)
+    markup.add(item3)
+    bot.send_message(call.message.chat.id, "С кем вы хотите познакомиться?", reply_markup=markup)
 
 
-@bot.callback_query_handler(func=lambda call: call.data in {"Boy", "Girl"})
+@bot.callback_query_handler(func=lambda call: call.data in {"Boy", "Girl", "Pohui"})
 def callback_seek_for(call):
     bot.answer_callback_query(callback_query_id=call.id, show_alert=False)
     try:
@@ -252,6 +255,17 @@ def callback_seek_for(call):
                 cursor.execute(
                     INSERT_USER_SEEK_FOR + " WHERE account_id = %s;",
                     ('girl', call.from_user.id),
+                )
+                connection.commit()
+            except:
+                connection.rollback()
+    elif call.data == "Pohui":
+        seeking_for = "неважно кого"
+        with connection.cursor() as cursor:
+            try:
+                cursor.execute(
+                    INSERT_USER_SEEK_FOR + " WHERE account_id = %s;",
+                    ('pohui', call.from_user.id),
                 )
                 connection.commit()
             except:
@@ -311,7 +325,8 @@ def verify(call):
                     VERIFY_USER_QUERY + " WHERE account_id = %s;",
                     (1, call.from_user.id),
                 )
-                bot.send_message(call.from_user.id, "Теперь жди 14 февраля и мы тебе подберем идеальную пару/друга")
+                defdef = call.from_user.id
+                start_mailing_solo(call.from_user.id)
                 connection.commit()
             except:
                 connection.rollback()
@@ -388,11 +403,11 @@ def admin_choice(message):
     elif message.text == "/start_mailing":
         bot.send_message(message.from_user.id, "Точно начать рассылку?\n/Yes\n/No")
         bot.register_next_step_handler(message, start_mailing_attention)
-    elif message.text == "/fuck":
-        bot.send_message(message.from_user.id, "Точно начать сношения?\n/Yes\n/No")
-        bot.register_next_step_handler(message, start_fuck_attention)
     elif message.text == "/exit":
         bot.send_message(message.from_user.id, "Выхожу из админки")
+    elif message.text == "/mails_bad_questions":
+        bot.send_message(message.from_user.id, "Точно начать рассылку?\n/Yes\n/No")
+        bot.register_next_step_handler(message, start_mailing_sex_pref)
 
 
 def read_questions(message):
@@ -556,6 +571,55 @@ def start_mailing():
                 connection.rollback()
 
 
+def start_mailing_solo(user_ide):
+    connection.begin()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT * FROM users WHERE admin_rights = 0 AND verified = 1 AND account_id = %s;", (user_ide, ))
+        users = cursor.fetchall()
+        cursor.execute("SELECT * FROM questions WHERE visability = 1 AND possible_answers != '' ORDER BY id ASC;")
+        questions = cursor.fetchall()
+        questions_map = {q["id"]: q for q in questions}
+        for user in users:
+            cursor.execute(
+                "SELECT question_id FROM user_question WHERE user_id = %s AND answer != '' ORDER BY question_id DESC LIMIT 1",
+                (user["id"],),
+            )
+            last_question_id = cursor.fetchall()
+            if not last_question_id:
+                last_question_id = min(questions_map.keys())
+            else:
+                try:
+                    last_question_id = next(filter(lambda x: x > last_question_id[0]["question_id"], questions_map.keys()))
+                except StopIteration:
+                    continue
+            markup = types.InlineKeyboardMarkup()
+            try:
+                items = [
+                    types.InlineKeyboardButton(
+                        text=answer, callback_data=f"{last_question_id}%{i}"
+                    )
+                    for i, answer in enumerate(
+                        questions_map[last_question_id]["possible_answers"].split(";")
+                    )
+                ]
+            except IndexError:
+                continue
+            [markup.add(item) for item in items]
+            bot.send_message(
+                user["account_id"],
+                questions_map[last_question_id]["question"],
+                reply_markup=markup,
+            )
+            try:
+                cursor.execute(
+                    "INSERT INTO user_question (user_id, question_id) VALUES (%s, %s);",
+                    (user["id"], last_question_id),
+                )
+                connection.commit()
+            except:
+                connection.rollback()
+
+
 @bot.callback_query_handler(func=lambda call: "%" in call.data)
 def callback_worker(call):
     question_id, answer_index = map(int, call.data.split("%"))
@@ -635,7 +699,7 @@ def next_question(account_id, next_question_id):
         except StopIteration:
             bot.send_message(
                 account_id,
-                "На этом всё :)\nУже 14 февраля мы подберем тебе человека для знакомства)",
+                "На этом всё :)\nУже 17 февраля мы подберем тебе человека для знакомства)",
             )
             return
         question = row["question"]
@@ -671,6 +735,34 @@ def next_question(account_id, next_question_id):
         except:
             connection.rollback()
 
+def start_mailing_sex_pref(message):
+    if message.text == "/Yes":
+        bot.send_message(message.from_user.id, "Начинаю рассылку...")
+        start_mailing_sex_pref_users()
+    elif message.text == "/No":
+        bot.send_message(message.from_user.id, "Отмена")
+        bot.send_message(
+            message.from_user.id,
+            ADMIN_CHOICE,
+        )
+        bot.register_next_step_handler(message, admin_choice)
+
+def start_mailing_sex_pref_users():
+    connection.begin()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT * FROM users WHERE admin_rights = 1 AND verified = 1;")
+        users = cursor.fetchall()
+        question = "Добрый день! Мы услышали ваши просьбы и рассылаем всем тем, кто полностью зарегистрировался, \
+        более актуальный вопрос: \nС кем вы хотите познакомиться?"
+        for user in users:
+            markup = types.InlineKeyboardMarkup()
+            item1 = types.InlineKeyboardButton(text="С парнем", callback_data="Boy")
+            item2 = types.InlineKeyboardButton(text="С девушкой", callback_data="Girl")
+            item3 = types.InlineKeyboardButton(text="Неважно", callback_data="Pohui")
+            markup.add(item1)
+            markup.add(item2)
+            markup.add(item3)
+            bot.send_message(user["account_id"], "С кем вы хотите познакомиться?", reply_markup=markup)
 
 
 '''
